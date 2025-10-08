@@ -39,7 +39,7 @@ Incremento segun Tiempo seleccionado:
 #define DEBOUNCE_DELAY  10  // Retardo para eliminar el rebote 10 ms
 
 // Pulsadores (Polling)
-/* #define PD3_CHANGE_DC   PD3     // pulsador para cambiar arranque */
+#define PD6_CHANGE_DC   PD6     // pulsador para cambiar arranque
 #define PD7_OFF_SOFTBOOT   PD7		// pulsador para detener arranque suave
 
 
@@ -53,13 +53,15 @@ Incremento segun Tiempo seleccionado:
 #define PD2_ON_OFF  PD2     // pulsador para encender/apagar el motor
  */
 // ------- Macros -------
-#define is_high(p,b)	(p & _BV(b)) == _BV(b)    // devuelve True o 1 si el bit b de p es 1.
 #define is_low(p,b)		(p & _BV(b)) == 0         // devuelve True o 1 si el bit b de p es 0.
 #define sbi(p,b)		p |= _BV(b)                // sbi(p,b) setea el bit b de p.
 #define cbi(p,b)		p &= ~(_BV(b))             // cbi(p,b) borra el bit b de p.
-#define tbi(p,b)		p ^= _BV(b)                // tbi(p,b) togglea el bit b de p.
 
 volatile uint8_t last_state_P3 = 0;
+volatile uint8_t last_state_P2 = 0;
+volatile uint8_t change_P1 = 0;
+
+
 // Flags botones
 volatile uint8_t on_flag = 0;
 volatile uint8_t change_t_flag = 0; //0: 6s, 1: 10s y 2: 15s
@@ -83,67 +85,76 @@ uint8_t change_time = 0;
 void pwm_generator(uint16_t time_start, uint16_t duty_cycle);
 
 void delay_time_generator(uint32_t us);
-
-
 //------------------------------------------------------------
 
 // manejo interrupcion externa con INT-0
 ISR(INT0_vect) {
-    // Rutina de interrupción externa INT0
-    if(on_flag){
-      chosen_time = 1; 
-    }
-    on_flag = !on_flag;
-    
-    duty_t = 0;
-    time_passed = 0;
-    duty_upgrate_t = 0;
-    ramp_time_progress_ms = 0;
-    _delay_ms(DEBOUNCE_DELAY); // Antirebote simple, no recomendado. Arreglo despues lo juro
-}
+  // Rutina de interrupción externa INT0
+  on_flag = !on_flag;
+  chosen_time = 1; 
+  duty_t = 0;
+  time_passed = 0;
+  duty_upgrate_t = 0;
+  ramp_time_progress_ms = 0;
+  _delay_ms(DEBOUNCE_DELAY); // Antirebote simple, no recomendado.
 
-ISR(INT1_vect) {
-  // Rutina de interrupción externa INT1
-  // Rota entre las opciones de timempo T
-  change_t_flag = 1; //0: No hacer cambio, 1: hacer cambio
-  chosen_time = 1;
-  _delay_ms(DEBOUNCE_DELAY); // Antirebote simple, no recomendado. Arreglo despues lo juro
+  /* on_flag = !on_flag;
+  change_P1 = 1; //con esta variable detectaremos y haremos antirrebote
+  //desactivo la interrupcion INT-0
+  cbi(EIMSK, INT0); */
 }
 
 int main(void) {
   /*  */
-  DDRB = 0b111111; //define todos los puertos B (son 6)como salida;
-  /* PORTB = 0x00; // puerto B inicializados en 0 */
+  DDRB = 0b111111; //define todos los puertos B (son 6)como 
+  PORTB = 0x00;
   DDRD = 0x00;  // Declaro los puertos PDn como entradas
 
   // === Configuración de interrupción externa INT0 y INT1 ===
   EICRA |= (1 << ISC01);
   EICRA &= ~(1 << ISC00);
   EIMSK |= (1 << INT0);
-  EIMSK |= (1 << INT1);
+  /* EIMSK |= (1 << INT1); */
   // Habilitar interrupciones globales
   sei();
   duty_t = 1;
 
   // ----------- Secuencia de Inicio --------------------
-  PORTB |= (1 << PORTB5);
+  /* PORTB |= (1 << PORTB5);
   PORTB |= (1 << PORTB4);
   PORTB |= (1 << PORTB3);
   PORTB |= (1 << PORTB2);
   PORTB |= (1 << PORTB1);
-  PORTB |= (1 << PORTB0);
+  PORTB |= (1 << PORTB0); */
+  PORTB = 0b00111111;
   _delay_ms(250);
-  PORTB &= ~(0 << PORTB5);
+  /* PORTB &= ~(0 << PORTB5);
   PORTB &= ~(0 << PORTB4);
   PORTB &= ~(0 << PORTB3);
   PORTB &= ~(0 << PORTB2);
   PORTB &= ~(0 << PORTB1);
-  PORTB &= ~(0 << PORTB0);
-  _delay_us(250000);
+  PORTB &= ~(0 << PORTB0); */
+  PORTB = 0b00000000;
+
+  _delay_ms(250);
+
 
   
 
-  while(1){
+  while(1){  
+    /* if (change_P1 == 1) {   //comprueba Boton 2
+      chosen_time = 1; 
+      duty_t = 0;
+      time_passed = 0;
+      duty_upgrate_t = 0;
+      ramp_time_progress_ms = 0;
+
+      change_P1 = 0;
+
+      _delay_ms(250);
+			sbi(EIMSK, INT0);
+    } */
+
     if(change_t_flag){ 
       switch(soft_time_ms){
         case 6000:
@@ -180,7 +191,7 @@ int main(void) {
           sbi(PORTB, PORTB3);
         break;
       }
-      delay_time_generator(500000); 
+      _delay_ms(200);
       cbi(PORTB, PORTB5);
       cbi(PORTB, PORTB4);
       cbi(PORTB, PORTB3);
@@ -189,6 +200,19 @@ int main(void) {
       chosen_time = 0;
     }
     
+    //Encuesto boton 2 solo cuando el motor esta apagado 
+    if(on_flag == 0){
+      if (is_low(PIND, PD6_CHANGE_DC)) {   //comprueba Boton 2
+      _delay_ms(DEBOUNCE_DELAY);  // esperar para evitar el rebote
+      if (is_low(PIND, PD6_CHANGE_DC) && last_state_P2 == 0) { //si sigue bajo y el ultimo estado no estaba seteado
+        change_t_flag = 1; //0: No hacer cambio, 1: hacer cambio
+        chosen_time = 1; //1: se visualizara el tiempo elegido al iniciar, 0: lo contratrio
+        last_state_P2 = 1;   // actualizar el ultimo estado
+      }
+    }else { // restablecer el estado cuando el boton no se esta presionando
+        last_state_P2 = 0;  
+      }
+    }
 
     if(on_flag){
       switch(soft_time_ms){
@@ -218,10 +242,7 @@ int main(void) {
         if (is_low(PIND, PD7_OFF_SOFTBOOT)) {   //comprueba Boton 3
             _delay_ms(DEBOUNCE_DELAY);  // esperar para evitar el rebote
             if (is_low(PIND, PD7_OFF_SOFTBOOT) && last_state_P3 == 0) { //si sigue bajo y el ultimo estado no estaba seteado
-              if(on_flag){
-                chosen_time = 1; 
-                /* change_t_flag = 1; */
-              }
+              chosen_time = 1;
               on_flag = !on_flag; // toglear la bandera del boton
               last_state_P3 = 1;   // actualizar el ultimo estado
             }
@@ -250,7 +271,7 @@ int main(void) {
 
 void delay_time_generator(uint32_t us){
   while(us--){
-    _delay_us(1);
+    _delay_us(100);
   }
 }
 // frecuencia 100Hz -> Periodo 10.000 us
@@ -313,10 +334,10 @@ void pwm_generator(uint16_t time_start, uint16_t duty_cycle){
     PORTB &= ~(0 << PORTB2);
     PORTB |= (1 << PORTB1);
 
-    delay_time_generator(10000000);
+    _delay_ms(10000);
   }
 
-  uint32_t periode_t_us = 10000; //10000 us para una frecuencia de 100
+  uint32_t periode_t_us = 100; //10000 us para una frecuencia de 100
   uint32_t time_on = (periode_t_us/100) * duty_cycle;   //100 us x (% duty time)
   uint32_t time_off = periode_t_us - time_on; //99%
 
@@ -334,5 +355,4 @@ void pwm_generator(uint16_t time_start, uint16_t duty_cycle){
   }
 	
 }
-
 
